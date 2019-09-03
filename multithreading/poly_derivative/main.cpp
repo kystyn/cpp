@@ -1,4 +1,5 @@
 #include <iostream>
+#include <vector>
 #include <map>
 #include <sstream>
 
@@ -16,21 +17,35 @@ enum state
     READY
 };
 
-struct monom
+struct Monom
 {
     int coeff;
     int
         degree;
+
+    void reset( void )
+    {
+        coeff = 0;
+        degree = 0;
+    }
 };
 
-struct comparator {
+struct Comparator {
     bool operator()( const unsigned int &m1, const unsigned int &m2 ) const {
         return m1 > m2;
     }
 };
 
-int readNum( std::string::iterator &it )
-{
+struct Token {
+    enum struct Type {
+        NUM, OP
+    };
+
+    Type type;
+    int value;
+};
+
+int readNum( std::string::iterator &it ) {
     int res = 0;
     while (isdigit(*it)) {
         res = res * 10 + int(*it++) - '0';
@@ -52,91 +67,125 @@ std::string derivative(std::string polynomial) {
 
     state st = WAIT_BASE;
 
-    monom current = {0, 0};
+    Monom current = {0, 0};
 
-    std::map<int, int, comparator> polynom;
-    for (auto it = polynomial.begin();
-         it < polynomial.end();) {
-
-        if (*it == '+' || *it == '*') {
+    bool inverse = false;
+    std::map<int, int, Comparator> polynom;
+    for (auto it = polynomial.begin(); it < polynomial.end();)
+    {
+        if (*it == '+' || *it == '*')
+        {
+            if (*it == '+' && st == WAIT_BASE)
+                current.coeff = 0;
             it++;
             continue;
         }
-        if (isdigit(int(*it))) {
-            if (st == WAIT_BASE) {
+        if (st == WAIT_BASE) {
+            if (isdigit(*it))
+            {
                 current.coeff = readNum(it);
-                st = WAIT_DEG;
             }
-            else if (st == WAIT_DEG){
+            else if (*it == 'x') {
+                if (current.coeff == 0)
+                {
+                    current.coeff = 1;
+                }
+                if (*(it + 1) == '^') {
+                    st = WAIT_DEG;
+                    it += 2;
+                }
+                else
+                {
+                    current.degree = 1;
+                    st = READY;
+                    it++;
+                }
+            }
+            else if (*it == '-')
+            {
+                inverse = true;
+                it++;
+            }
+
+        }
+        else if (st == WAIT_DEG)
+        {
+            if (isdigit(*it))
+            {
                 current.degree = readNum(it);
                 st = READY;
             }
         }
-        else if (*it == '-') {
-            if (*(it + 1) == 'x')
-                current.coeff = -1;
-            else {
-                it++;
-                current.coeff = -readNum(it);
-            }
-            st = WAIT_DEG;
-        }
-        else if (*it == 'x' && *(it + 1) != '^') {
-            current.coeff = 1;
-            current.degree = 1;
-            st = READY;
-            it++;
-        }
-        else if (*it == 'x' && *(it + 1) == '^') {
-            current.coeff = 1;
-            it += 2;
-        }
-
-        if (st == READY){
-            std::map<int, int, comparator>::iterator iter;
-            if ((iter = polynom.find(current.degree)) != polynom.end())
-                iter->second += current.coeff;
-                //polynom[current.degree] += current.coeff;
-            else
+        else if (st == READY)
+        {
+            auto iter = polynom.find(current.degree);
+            if (inverse)
+                current.coeff *= -1;
+            inverse = false;
+            if (iter == polynom.end())
                 polynom[current.degree] = current.coeff;
+            else
+                iter->second += current.coeff;
             st = WAIT_BASE;
+            current.reset();
         }
     }
 
-    if (st == WAIT_DEG) {
-        current.degree = 1;
-        std::map<int, int, comparator>::iterator iter;
-        if ((iter = polynom.find(current.degree)) != polynom.end())
-            iter->second += current.coeff;
-        else
-            polynom[current.degree] = current.coeff;
-    }
+    // final add
+    auto iter = polynom.find(current.degree);
+    if (inverse)
+        current.coeff *= -1;
+    inverse = false;
+    if (iter == polynom.end())
+        polynom[current.degree] = current.coeff;
+    else
+        iter->second += current.coeff;
 
     std::ostringstream oss;
+    bool outCoeff = true, outDeg = true, outX = true;
+    for (auto it = polynom.begin(); it != polynom.end(); it++)
+    {
+        outCoeff = true;
+        outDeg = true;
+        outX = true;
+        if (it->second * it->first == 1)
+        {
+            outCoeff = false;
+        }
+        if (it->first - 1 == 1)
+            outDeg = false;
+        if (it->first - 1 == 0)
+        {
+            outCoeff = true;
+            outX = false;
+            outDeg = false;
+        }
+        if (it->second * it->first == 0)
+            continue;
 
-    bool first = true;
-    for (auto it = polynom.begin(); it != polynom.end(); it++) {
-        if (!first) {
-            if (it->second > 0)
-                oss << "+";
-            else if (it->second == 0)
-                continue;
-        }
-        first = false;
-        if (it->second != 1 && it->second != 0)
+        if (outCoeff)
+        {
+            if (it->second * it->first > 0)
+            {
+                if (oss.str().size() != 0)
+                    oss << "+";
+            }
+
             oss << it->second * it->first;
-        if (it->first - 1 != 0) {
-            oss << "*x";
-            if (it->first - 1 != 1)
-                oss << "^" << (it->first - 1);
         }
+        if (outX)
+            oss << "*x";
+        if (outDeg)
+            oss << "^" << it->first - 1;
+
     }
-    oss.str();
-    return oss.str();
+    if (oss.str().size() == 0)
+        return "0\n";
+    return oss.str() + '\n';
 }
 
 int main()
 {
-    std::cout << derivative("x^3 + x + 1 + x + 2 * x + 5 * x^2");
+    std::cout << derivative("1+2-3");
     return 0;
 }
